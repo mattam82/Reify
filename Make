@@ -1,13 +1,13 @@
--I src -R theories Constructors
--custom "$(CAMLOPTLINK) $(ZDEBUG) $(ZFLAGS) -shared -o src/constructors_plugin.cmxs src/constructors.cmx src/constructors_plugin_mod.cmx" "src/constructors.cmx src/constructors_plugin_mod.cmx" src/constructors_plugin.cmxs
--custom "$(CAMLLINK) -g -a -o src/constructors_plugin.cma src/constructors.cmo src/constructors_plugin_mod.cmo" "src/constructors.cmo src/constructors_plugin_mod.cmo" src/constructors_plugin.cma
+-I src -R theories Reify
+-custom "$(CAMLOPTLINK) $(ZDEBUG) $(ZFLAGS) -shared -o src/reify_plugin.cmxs src/reify.cmx src/reify_plugin_mod.cmx" "src/reify.cmx src/reify_plugin_mod.cmx" src/reify_plugin.cmxs
+-custom "$(CAMLLINK) -g -a -o src/reify_plugin.cma src/reify.cmo src/reify_plugin_mod.cmo" "src/reify.cmo src/reify_plugin_mod.cmo" src/reify_plugin.cma
 -custom "$(COQBIN)coqc $(COQDEBUG) $(COQFLAGS) $*" "%.v $(CONSTRUCTORS_PLUGINOPT) $(CONSTRUCTORS_PLUGIN)" "%.vo %.glob"
-CONSTRUCTORS_PLUGIN = "src/constructors_plugin.cma"
-CONSTRUCTORS_PLUGINOPT = "src/constructors_plugin.cmxs"
+CONSTRUCTORS_PLUGIN = "src/reify_plugin.cma"
+CONSTRUCTORS_PLUGINOPT = "src/reify_plugin.cmxs"
 COQDOC = "$(COQBIN)coqdoc -interpolate -utf8"
 CAMLP4OPTIONS = "-loc loc"
-src/constructors.ml
-src/constructors_plugin_mod.ml
+src/reify.ml
+src/reify_plugin_mod.ml
 theories/Dynamic.v
-theories/Constructors.v
-test-suite/constructortac.v
+theories/Reify.v
+test-suite/reify_prop.v
