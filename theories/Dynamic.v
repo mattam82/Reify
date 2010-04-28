@@ -1,3 +1,3 @@
-Record dyn : Type := mkDyn {
-  dyn_type : Type;
-  dyn_value : dyn_type }.
+Record dynamic : Type := mkDynamic {
+  dynamic_type : Type;
+  dynamic_val : dynamic_type }.

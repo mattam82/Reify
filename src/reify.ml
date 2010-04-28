@@ -27,10 +27,26 @@ open Tacticals
 (** A tactic to help reification based on classes:
     factorize all variables of a particular type into a varmap. *)
 
-let gen_constant dir s = Coqlib.gen_constant "typeclass_tactics" dir s
+let gen_constant dir s = Coqlib.gen_constant "reify" dir s
+let init_constant dir s = 
+  Libnames.constr_of_global (Coqlib.find_reference "reify" dir s)
+
+let datatypes_path = ["Coq";"Init";"Datatypes"]
+
+let coq_list_ind = lazy (init_constant datatypes_path "list")
+let coq_list_nil = lazy (init_constant datatypes_path "nil")
+let coq_list_cons = lazy (init_constant datatypes_path "cons")
+
+let dynamic_path = ["Reify";"Dynamic"]
+let coq_dynamic_ind = lazy (init_constant dynamic_path "dynamic")
+let coq_dynamic_constr = lazy (init_constant dynamic_path "mkDynamic")
+let coq_dynamic_type = lazy (init_constant dynamic_path "dynamic_type")
+let coq_dynamic_obj = lazy (init_constant dynamic_path "dynamic_obj")
+
+let coq_prod = lazy (init_constant datatypes_path "prod")
+let coq_pair = lazy (init_constant datatypes_path "pair")
+
 let coq_List_nth = lazy (gen_constant ["Lists"; "List"] "nth")
-let coq_List_cons = lazy (gen_constant ["Lists"; "List"] "cons")
-let coq_List_nil = lazy (gen_constant ["Lists"; "List"] "nil")
 
 let freevars c =
   let rec frec acc c = match kind_of_term c with
@@ -47,28 +63,29 @@ let rec coq_nat_of_int = function
   | 0 -> Lazy.force coq_zero
   | n -> mkApp (Lazy.force coq_succ, [| coq_nat_of_int (pred n) |])
 
-let varify_constr_list ty def varh c =
-  let vars = Idset.elements (freevars c) in
-  let mkaccess i =
-    mkApp (Lazy.force coq_List_nth,
-	  [| ty; coq_nat_of_int i; varh; def |])
-  in
-  let l = List.fold_right (fun id acc ->
-    mkApp (Lazy.force coq_List_cons, [| ty ; mkVar id; acc |]))
-    vars (mkApp (Lazy.force coq_List_nil, [| ty |]))
-  in
-  let subst =
-    list_map_i (fun i id -> (id, mkaccess i)) 0 vars
-  in
-    l, replace_vars subst c
+(* let varify_constr_list ty def varh c = *)
+(*   let vars = Idset.elements (freevars c) in *)
+(*   let mkaccess i = *)
+(*     mkApp (Lazy.force coq_List_nth, *)
+(* 	  [| ty; coq_nat_of_int i; varh; def |]) *)
+(*   in *)
+(*   let l = List.fold_right (fun id acc -> *)
+(*     mkApp (Lazy.force coq_List_cons, [| ty ; mkVar id; acc |])) *)
+(*     vars (mkApp (Lazy.force coq_List_nil, [| ty |])) *)
+(*   in *)
+(*   let subst = *)
+(*     list_map_i (fun i id -> (id, mkaccess i)) 0 vars *)
+(*   in *)
+(*     l, replace_vars subst c *)
 
-let coq_varmap_empty =  lazy (gen_constant ["quote"; "Quote"] "Empty_vm")
-let coq_varmap_node =  lazy (gen_constant ["quote"; "Quote"] "Node_vm")
-let coq_varmap_lookup =  lazy (gen_constant ["quote"; "Quote"] "varmap_find")
+let quote_path = ["quote";"Quote"]
+let coq_varmap_empty = lazy (gen_constant quote_path "Empty_vm")
+let coq_varmap_node = lazy (gen_constant quote_path "Node_vm")
+let coq_varmap_lookup = lazy (gen_constant quote_path "varmap_find")
 
-let coq_index_left =  lazy (gen_constant ["quote"; "Quote"] "Left_idx")
-let coq_index_right =  lazy (gen_constant ["quote"; "Quote"] "Right_idx")
-let coq_index_end =  lazy (gen_constant ["quote"; "Quote"] "End_idx")
+let coq_index_left = lazy (gen_constant quote_path "Left_idx")
+let coq_index_right = lazy (gen_constant quote_path "Right_idx")
+let coq_index_end = lazy (gen_constant quote_path "End_idx")
 
 let rec split_interleaved l r = function
   | hd :: hd' :: tl' ->
@@ -111,3 +128,82 @@ TACTIC EXTEND varify
 	(letin_tac None (Name h') c' None allHyps)
   ]
 END
+
+let varify_constr_varmap evar map ty def varh c =
+  let tbl = Hashtbl.create 1000 in
+  let rec aux c =
+    try Hashtbl.find tbl c
+    with Not_found ->
+      try Hashtbl.find map c
+      with Not_found -> 
+	match kind_of_term c with
+	| App (f, args) -> 
+	    (try mkApp (Hashtbl.find f map, Array.map aux args)
+	     with Not_found ->
+	       let l = Hashtbl.length tbl in
+	       let idx = mkidx (succ l) 0 in
+	       let ev = mkApp (evar, idx) in
+		 Hashtbl.add tbl c ev; ev)
+	| _ -> map aux c
+  in
+  let c' = aux c in
+    
+  
+  let mkaccess i =
+    mkApp (Lazy.force coq_varmap_lookup,
+	  [| ty; def; i; varh |])
+  in
+
+type reify_map = (constr * constr) list
+
+let coq_constrs_list = lazy 
+(*   (mkApp (Lazy.force coq_list_ind,  *)
+(* 	  [|  *)
+  (mkApp (Lazy.force coq_prod, [| Lazy.force coq_dynamic_ind;
+				 Lazy.force coq_dynamic_ind |]))
+
+let terms_of_dynamic c =
+  match kind_of_term c with
+  | App (f, args) when f = Lazy.force coq_dynamic_constr ->
+      (args.(1), args.(0))
+  | _ -> raise (Invalid_argument "term_of_dynamic")
+  
+let rec constrs_of_coq_dynamic_list c tbl = 
+  match kind_of_term c with
+  | App (f, args) when f = Lazy.force coq_list_nil -> tbl
+  | App (f, args) when f = Lazy.force coq_list_cons && 
+      eq_constr args.(0) (Lazy.force coq_constrs_list) && 
+      Array.length args = 3 -> 
+      (match kind_of_term args.(1) with
+       | App (f, args') when f = Lazy.force coq_pair &&
+	   Array.length args' = 4 ->
+	   Hashtbl.add tbl (fst (terms_of_dynamic args'.(2))) (fst (terms_of_dynamic args'.(3)));
+	     constrs_of_coq_dynamic_list args.(2) tbl
+       | _ -> raise (Invalid_argument "constrs_of_coq_dynamic_list"))
+  | _ -> raise (Invalid_argument "constrs_of_coq_dynamic_list")
+      
+(* let reify map c = *)
+(*   let rec aux c = *)
+(*     try List.assoc c map  *)
+(*     with Not_found -> map_constr aux c *)
+(*   in aux c *)
+
+(* TACTIC EXTEND reify *)
+(* [ "reify" ident(varh) ident(h') constr(ty) constr(def) constr(list) constr(evar) constr(c) ] -> [ *)
+(*   let assoc = constrs_of_coq_dynamic_list list (Hashtbl.create 42) in *)
+(*   let vars, c' = varify_constr_varmap evar assoc ty def (mkVar varh) c in *)
+(*   let c'' = reify assoc c' in *)
+(*     tclTHEN (letin_tac None (Name varh) vars None allHyps) *)
+(*       (letin_tac None (Name h') c'' None allHyps) *)
+(* ] *)
+(* END *)
+
+TACTIC EXTEND reify
+[ "reify" ident(varh) ident(h') constr(ty) constr(def) constr(list) constr(evar) constr(c) ] -> [
+  let assoc = constrs_of_coq_dynamic_list list (Hashtbl.create 42) in
+  let vars, c' = varify_constr_varmap evar assoc ty def (mkVar varh) c in
+    tclTHEN (letin_tac None (Name varh) vars None allHyps)
+      (letin_tac None (Name h') c' None allHyps)
+]
+END
+
