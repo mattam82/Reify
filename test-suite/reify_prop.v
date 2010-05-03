@@ -52,6 +52,7 @@ Fixpoint interpe (v : varmap Z) (p : expr) : Z :=
 
 Definition expr_map :=
   [(dyn Z, dyn expr);
+   (dyn (@eq), dyn (@eq));
    (dyn Z0, dyn (Ecst Z0));
    (dyn Zmult, dyn Emult);
    (dyn Zplus, dyn Eplus);
@@ -64,14 +65,16 @@ Ltac reifye :=
     |- ?T => 
       let vars := fresh "vars" in let goal' := fresh "goal'" in
       let l := eval cbv delta [expr_map] in expr_map in
-        reify vars goal' Z 0 l T;
+        reify vars goal' Z 0 l Evar T;
         match eval red in goal' with
           ?x = ?y => change (interpe vars x = interpe vars y)
         end
   end.
 
 Goal forall x y, x * y = x * y. 
-intros. reifye. Admitted.
+intros. reifye.
+reflexivity.
+Qed.
 
 Fixpoint test (zs : list Z) : Z :=
   match zs with
@@ -101,43 +104,37 @@ Proof.
   intros. unfold test.
 
 Set Printing Depth 20.
-
-Ltac reifye ::=
-  match goal with
-    |- ?T => 
-      let vars := fresh "vars" in let goal' := fresh "goal'" in
-      let l := eval cbv delta [expr_map] in expr_map in
-        reify vars goal' Z 0 l T; unfold find_vare in goal' end.
-  Time reifye. idtac.
-Admitted.
-
-Goal forall x1 x2 x3 x4 x5 x1' x2' x3' x4' x5' x1'' x2'' x3'' x4'' x5'', 
-  test (x1 :: x2 :: x3 :: x4 :: x5 :: x1' :: x2' :: x3' :: x4' :: x5' :: x1'' :: x2'' :: x3'' :: x4'' :: x5'' :: nil) = 
-  test (x5'' :: x4'' :: x3'' :: x2'' :: x1'' :: x5' :: x4' :: x3' :: x2' :: x1' :: x5 :: x4 :: x3 :: x2 :: x1 :: nil).
-Proof.
-  intros. unfold test.
-
-Set Printing Depth 20.
-
-Ltac reifye ::=
-  match goal with
-    |- ?T => 
-      let vars := fresh "vars" in let goal' := fresh "goal'" in
-      let l := eval cbv delta [expr_map] in expr_map in
-        reify vars goal' Z 0 l T; unfold find_vare in goal' end.
   Time reifye. idtac.
 Admitted.
 
 
-Goal forall P : Prop, P /\ True.
+(* Goal forall x1 x2 x3 x4 x5 x1' x2' x3' x4' x5' x1'' x2'' x3'' x4'' x5'',  *)
+(*   test (x1 :: x2 :: x3 :: x4 :: x5 :: x1' :: x2' :: x3' :: x4' :: x5' :: x1'' :: x2'' :: x3'' :: x4'' :: x5'' :: nil) =  *)
+(*   test (x5'' :: x4'' :: x3'' :: x2'' :: x1'' :: x5' :: x4' :: x3' :: x2' :: x1' :: x5 :: x4 :: x3 :: x2 :: x1 :: nil). *)
+(* Proof. *)
+(*   intros. unfold test. *)
+
+(* Set Printing Depth 5. *)
+
+(* Ltac reifye ::= *)
+(*   match goal with *)
+(*     |- ?T =>  *)
+(*       let vars := fresh "vars" in let goal' := fresh "goal'" in *)
+(*       let l := eval cbv delta [expr_map] in expr_map in *)
+(*         reify vars goal' Z 0 l Evar T end. *)
+(*   Time reifye. idtac. *)
+(* Admitted. *)
+
+
+Goal forall P : Prop, P /\ 2 = 3.
 intros P.
 match goal with
   |- ?T => 
     let l := eval cbv delta [prop_map] in prop_map in
-      idtac l;
-    reify vars goal Prop True l T
-end. subst goal. simpl.
-exact I.
+      reify vars goal Prop True l prop_var T(* ; change (interp vars goal); subst goal *)
+end.
+
+ clearbody vars. admit.
 Defined.
 
 match goal with

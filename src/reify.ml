@@ -83,6 +83,8 @@ let coq_varmap_empty = lazy (gen_constant quote_path "Empty_vm")
 let coq_varmap_node = lazy (gen_constant quote_path "Node_vm")
 let coq_varmap_lookup = lazy (gen_constant quote_path "varmap_find")
 
+let coq_varmap_add = lazy (init_constant ["Reify";"Reify"] "varmap_add")
+
 let coq_index_left = lazy (gen_constant quote_path "Left_idx")
 let coq_index_right = lazy (gen_constant quote_path "Right_idx")
 let coq_index_end = lazy (gen_constant quote_path "End_idx")
@@ -94,11 +96,11 @@ let rec split_interleaved l r = function
   | [] -> (List.rev l, List.rev r)
 
 let rec mkidx i p =
-  if i mod 2 = 0 then
+  if i / 2 = 0 then
     if i = 0 then mkApp (Lazy.force coq_index_left, [|Lazy.force coq_index_end|])
-    else mkApp (Lazy.force coq_index_left, [|mkidx (i - p) (2 * p)|])
-  else if i = 1 then mkApp (Lazy.force coq_index_right, [|Lazy.force coq_index_end|])
-  else mkApp (Lazy.force coq_index_right, [|mkidx (i - p) (2 * p)|])
+    else mkApp (Lazy.force coq_index_right, [|Lazy.force coq_index_end|])
+  else if i mod 2 = 0 then mkApp (Lazy.force coq_index_left, [|mkidx (i / 2) p|])
+  else mkApp (Lazy.force coq_index_right, [|mkidx (i / 2) 0|])
 
 let varify_constr_varmap ty def varh c =
   let vars = Idset.elements (freevars c) in
@@ -129,30 +131,40 @@ TACTIC EXTEND varify
   ]
 END
 
-let varify_constr_varmap evar map ty def varh c =
+let hashtbl_elements h = Hashtbl.fold (fun x y l -> (x,y)::l) h []
+
+let varmap_of_vars ty def v = 
+  List.fold_left
+    (fun vmap (i, idx, c) ->
+       mkApp (Lazy.force coq_varmap_add, [| ty; c; vmap; idx |]))
+    (mkApp (Lazy.force coq_varmap_empty, [| ty |])) v
+    
+let varify_constr_varmap map ty def varh evar c =
   let tbl = Hashtbl.create 1000 in
   let rec aux c =
-    try Hashtbl.find tbl c
+    try mkApp (evar, [| pi2 (Hashtbl.find tbl c) |])
     with Not_found ->
       try Hashtbl.find map c
       with Not_found -> 
-	match kind_of_term c with
-	| App (f, args) -> 
-	    (try mkApp (Hashtbl.find f map, Array.map aux args)
-	     with Not_found ->
-	       let l = Hashtbl.length tbl in
-	       let idx = mkidx (succ l) 0 in
-	       let ev = mkApp (evar, idx) in
-		 Hashtbl.add tbl c ev; ev)
-	| _ -> map aux c
+	try 
+	  (match kind_of_term c with
+	   | App (f, args) -> 
+	       mkApp (Hashtbl.find map f, Array.map aux args)
+	   | _ -> raise Not_found)
+	with Not_found ->
+	  let l = Hashtbl.length tbl in
+	  let l' = succ l in
+	  let idx = mkidx l' 0 in
+	    Hashtbl.add tbl c (l', idx, c); 
+	    mkApp (evar, [| idx |])
   in
   let c' = aux c in
-    
-  
-  let mkaccess i =
-    mkApp (Lazy.force coq_varmap_lookup,
-	  [| ty; def; i; varh |])
+  let vars = 
+    List.sort (fun x y -> Pervasives.compare (pi1 (snd x)) (pi1 (snd y))) 
+      (hashtbl_elements tbl) 
   in
+  let vars = List.map snd vars in
+    varmap_of_vars ty def vars, c'  
 
 type reify_map = (constr * constr) list
 
@@ -201,7 +213,7 @@ let rec constrs_of_coq_dynamic_list c tbl =
 TACTIC EXTEND reify
 [ "reify" ident(varh) ident(h') constr(ty) constr(def) constr(list) constr(evar) constr(c) ] -> [
   let assoc = constrs_of_coq_dynamic_list list (Hashtbl.create 42) in
-  let vars, c' = varify_constr_varmap evar assoc ty def (mkVar varh) c in
+  let vars, c' = varify_constr_varmap assoc ty def (mkVar varh) evar c in
     tclTHEN (letin_tac None (Name varh) vars None allHyps)
       (letin_tac None (Name h') c' None allHyps)
 ]
